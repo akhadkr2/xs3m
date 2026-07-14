@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Kết quả xổ số</title>
+
+</head>
+
+<body>
+
+<h2>Kết quả xổ số</h2>
+
+<select id="region">
+
+<option value="mt">Miền Trung</option>
+
+<option value="mn">Miền Nam</option>
+
+<option value="mb">Miền Bắc</option>
+
+</select>
+
+<button onclick="loadData()">
+
+Lấy kết quả
+
+</button>
+
+<button onclick="copyResult()">
+
+Copy
+
+</button>
+
+<br><br>
+
+<textarea
+id="result"
+style="width:100%;height:500px;"
+spellcheck="false">
+</textarea>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycby94ka4dyRJOtJroYMzHvBcYuCsuKOKEJrcjKxp_kRaf3RCcwjcIpSwhkeht1ZXaf5Fig/exec";
+
+async function loadData() {
+
+    const region = document.getElementById("region").value;
+
+    document.getElementById("result").value = "Đang tải dữ liệu...";
+
+    try {
+
+        const response = await fetch(API_URL + "?region=" + region);
+
+        if (!response.ok) {
+            throw new Error("Không thể kết nối Apps Script");
+        }
+
+        const html = await response.text();
+
+        if (region === "mb") {
+
+            parseMB(html);
+
+        } else {
+
+            parseMTMN(html);
+
+        }
+
+    }
+
+    catch (err) {
+
+        document.getElementById("result").value =
+            "Lỗi:\n\n" + err.message;
+
+    }
+
+}
+function parseMTMN(html) {
+
+    const data = parseMTMNData(html);
+
+    const text = formatMTMN(data);
+
+    document.getElementById("result").value = text;
+
+}
+
+
+
+function parseMB(html) {
+
+    const data = parseMBData(html);
+
+    const text = formatMB(data);
+
+    document.getElementById("result").value = text;
+
+}
+function cleanText(text) {
+
+    return text
+        .replace(/\r/g, "")
+        .replace(/\n/g, " ")
+        .replace(/\t/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+}
+
+
+
+function getSections(html) {
+
+    html = cleanText(html);
+
+    return html.split('<section class=section>').slice(1);
+
+}
+
+
+
+function getDate(section) {
+
+    const m = section.match(/(\d{2}\/\d{2}\/\d{4})/);
+
+    return m ? m[1] : "";
+
+}
+
+
+
+function getProvinceNames(section) {
+
+    const names = [];
+
+    const reg = /title=[^>]*href=[^>]*>([^<]+)<\/a>/g;
+
+    let m;
+
+    while ((m = reg.exec(section)) !== null) {
+
+        const name = m[1].trim();
+
+        if (
+            name !== "XSMT hôm nay" &&
+            name !== "XSMN hôm nay" &&
+            name !== "XSMB hôm nay" &&
+            !name.startsWith("Loto") &&
+            !names.includes(name)
+        ) {
+
+            names.push(name);
+
+        }
+
+    }
+
+    return names;
+
+}
+
+
+
+function getAllNumbers(cellHtml) {
+
+    const arr = [];
+
+    const reg = />\s*([0-9]{2,6})\s*</g;
+
+    let m;
+
+    while ((m = reg.exec(cellHtml)) !== null) {
+
+        arr.push(m[1]);
+
+    }
+
+    return arr;
+
+}
+function parseMTMNData(html) {
+
+    const result = [];
+
+    const sections = getSections(html);
+
+    for (const section of sections) {
+
+        const date = getDate(section);
+
+        if (!date) continue;
+
+        const provinces = getProvinceNames(section);
+
+        const tableMatch = section.match(
+            /<table class=table-result[\s\S]*?<\/table>/
+        );
+
+        if (!tableMatch) continue;
+
+        const table = tableMatch[0];
+
+        const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+
+        const rows = [];
+
+        let row;
+
+        while ((row = rowRegex.exec(table)) !== null) {
+
+            rows.push(row[1]);
+
+        }
+
+        const provinceData = provinces.map(name => ({
+            name: name,
+            numbers: []
+        }));
+
+        for (const r of rows) {
+
+            const cells = r.match(/<td[\s\S]*?(?=<td|<\/tr>)/g);
+
+            if (!cells) continue;
+
+            for (let i = 0; i < provinceData.length; i++) {
+
+                if (!cells[i]) continue;
+
+                const nums = getAllNumbers(cells[i]);
+
+                provinceData[i].numbers.push(...nums);
+
+            }
+
+        }
+
+        result.push({
+
+            date: date,
+
+            provinces: provinceData
+
+        });
+
+    }
+
+    return result;
+
+}
+function parseMBData(html) {
+
+    const result = [];
+
+    html = cleanText(html);
+
+    const blocks = html.split('<div class="block m-calc">').slice(1);
+
+    for (const block of blocks) {
+
+        const date = getDate(block);
+
+        if (!date) continue;
+
+        let province = "";
+
+        const p = block.match(/mở thưởng tại\s*([^<]+)/i);
+
+        if (p) {
+
+            province = p[1].trim();
+
+        }
+
+        const tableMatch = block.match(
+            /<table class="table-result[\s\S]*?<\/table>/
+        );
+
+        if (!tableMatch) continue;
+
+        const table = tableMatch[0];
+
+        const numbers = [];
+
+        const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+
+        let row;
+
+        while ((row = rowRegex.exec(table)) !== null) {
+
+            const cells = row[1].match(/<td[\s\S]*?(?=<td|<\/tr>)/g);
+
+            if (!cells || cells.length < 2) continue;
+
+            const nums = getAllNumbers(cells[1]);
+
+            numbers.push(...nums);
+
+        }
+
+        result.push({
+
+            date: date,
+
+            province: province,
+
+            numbers: numbers
+
+        });
+
+    }
+
+    return result;
+
+}
+function formatMTMN(data) {
+
+    let output = "";
+
+    data.forEach(day => {
+
+        output += day.date + "\n\n";
+
+        const maxRows = 18;
+
+        for (let row = 0; row < maxRows; row++) {
+
+            const line = [];
+
+            day.provinces.forEach(province => {
+
+                line.push(province.numbers[row] || "");
+
+            });
+
+            output += line.join("\t") + "\n";
+
+        }
+
+        output += "\n";
+
+    });
+
+    return output.trim();
+
+}
+function formatMB(data) {
+
+    let output = "";
+
+    data.forEach(day => {
+
+        output += day.date;
+
+        if (day.province) {
+            output += " - " + day.province;
+        }
+
+        output += "\n\n";
+
+        day.numbers.forEach(number => {
+
+            output += number + "\n";
+
+        });
+
+        output += "\n";
+
+    });
+
+    return output.trim();
+
+}
+function copyResult() {
+
+    const textarea = document.getElementById("result");
+
+    textarea.select();
+
+    textarea.setSelectionRange(0, 999999);
+
+    navigator.clipboard.writeText(textarea.value)
+        .then(() => {
+
+            alert("Đã copy kết quả.");
+
+        })
+        .catch(() => {
+
+            document.execCommand("copy");
+
+            alert("Đã copy kết quả.");
+
+        });
+
+}
+
+</script>
+
+</body>
+
+</html>
